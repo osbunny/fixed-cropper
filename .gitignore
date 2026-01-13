@@ -1,0 +1,42 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+*.log
+
+# ===== Virtualenv =====
+.venv/
+venv/
+ENV/
+env/
+
+# ===== PyInstaller =====
+*.spec
+
+# ===== IDE / Editor =====
+.vscode/
+.idea/
+*.swp
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== App settings / user data =====
+# QSettings が ini を作る構成にしている場合の保険（場所は環境で変わります）
+*.ini
+
+# ===== Outputs (exported images) =====
+output*.png
+output*.jpg
+output*.jpeg
+
+# ===== Local-only assets (optional) =====
+# もしテスト画像を置くなら、上げたくない場合だけ有効化
+# /samples/
