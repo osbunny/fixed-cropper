@@ -8,7 +8,7 @@ from PySide6.QtGui import QAction, QPixmap, QPen, QColor, QBrush, QImage, QIcon,
 from PySide6.QtWidgets import (
     QFileDialog, QMainWindow, QMessageBox,
     QGraphicsView, QGraphicsScene, QGraphicsRectItem,
-    QGraphicsPixmapItem, QInputDialog, QColorDialog,
+    QGraphicsPixmapItem, QGraphicsLineItem, QInputDialog, QColorDialog,
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton,
     QDialog, QScrollArea, QMenu, QLineEdit
 )
@@ -1003,7 +1003,29 @@ class MainWindow(QMainWindow):
         self.frame_item.setPen(QPen(Qt.white, 2))
         self.scene.addItem(self.frame_item)
 
+        # ---- ガイド線（表示用）----
+        self._show_center_guides = True
+        self._show_taskbar_guide = True
+
+        self._guide_pen = QPen(Qt.white, 1, Qt.DashLine)
+        self._guide_pen.setCosmetic(True)  # ズームしても線幅1pxで一定
+
+        self._guide_center_v = QGraphicsLineItem()
+        self._guide_center_h = QGraphicsLineItem()
+        self._guide_taskbar = QGraphicsLineItem()
+
+        for it in (self._guide_center_v, self._guide_center_h, self._guide_taskbar):
+            it.setZValue(9)  # 画像(-10)より上、枠(10)より下（枠より上にしたければ11）
+            it.setPen(self._guide_pen)
+            it.setAcceptedMouseButtons(Qt.NoButton)  # 操作の邪魔をしない
+            it.setAcceptHoverEvents(False)
+            self.scene.addItem(it)
+
+        self._update_guides_geometry()
+        self._update_guides_visibility()
+
         self.setAcceptDrops(True)
+
         # 設定（前回フォルダ等）を永続化
         self._settings = QSettings("user", APP_NAME)
         self._last_dir = self._settings.value("last_dir", str(Path.home()), type=str)
@@ -1091,6 +1113,9 @@ class MainWindow(QMainWindow):
         pen_color = self._auto_frame_color(self.bg_color)
         self.frame_item.setPen(QPen(pen_color, 2))
 
+        if hasattr(self, "_guide_center_v"):
+            self._update_guides_pen()
+
     @staticmethod
     def _auto_frame_color(bg: QColor) -> QColor:
         r = bg.red() / 255.0
@@ -1107,6 +1132,40 @@ class MainWindow(QMainWindow):
             r.left() - margin, r.top() - margin,
             r.width() + margin * 2, r.height() + margin * 2
         ))
+
+    # ---- ガイド線 ----
+    def _update_guides_geometry(self):
+        """キャンバスサイズに合わせてガイド線の位置を更新"""
+        w = self.output_size.w
+        h = self.output_size.h
+
+        cx = w / 2.0
+        cy = h / 2.0
+
+        # 中心ガイドは少しはみ出す
+        bleed = 40.0  # 好みで変更OK
+        self._guide_center_v.setLine(cx, -bleed, cx, h + bleed)
+        self._guide_center_h.setLine(-bleed, cy, w + bleed, cy)
+
+        # タスクバー線：下から48px、はみ出さない
+        y = h - 48.0
+        self._guide_taskbar.setLine(0.0, y, float(w), y)
+
+    def _update_guides_pen(self):
+        """フレーム色と同期してガイド線の色も更新"""
+        # frame_item のペン色を使う（auto_frame_colorの結果）
+        c = self.frame_item.pen().color()
+        p = QPen(c, 1, Qt.DashLine)
+        p.setCosmetic(True)
+
+        self._guide_center_v.setPen(p)
+        self._guide_center_h.setPen(p)
+        self._guide_taskbar.setPen(p)
+
+    def _update_guides_visibility(self):
+        self._guide_center_v.setVisible(self._show_center_guides)
+        self._guide_center_h.setVisible(self._show_center_guides)
+        self._guide_taskbar.setVisible(self._show_taskbar_guide)
 
     # ---- メニュー ----
     def _build_menus(self):
@@ -1243,6 +1302,24 @@ class MainWindow(QMainWindow):
         self._rebuild_recent_bg_menu()
 
 
+        # --- View / 表示 ---
+        view_menu = self.menuBar().addMenu("表示(&V)")
+
+        act_center_guides = QAction("中心ガイド（十字点線）", self)
+        act_center_guides.setCheckable(True)
+        act_center_guides.setChecked(True)
+        act_center_guides.setShortcut(QKeySequence("Ctrl+G"))  # 好みで変更OK
+        act_center_guides.toggled.connect(self.set_center_guides_visible)
+        view_menu.addAction(act_center_guides)
+
+        act_taskbar = QAction("タスクバーガイド（下48px）", self)
+        act_taskbar.setCheckable(True)
+        act_taskbar.setChecked(True)
+        act_taskbar.setShortcut(QKeySequence("Ctrl+T"))  # 好みで変更OK
+        act_taskbar.toggled.connect(self.set_taskbar_guide_visible)
+        view_menu.addAction(act_taskbar)
+
+
         # --- Help ---
         help_menu = self.menuBar().addMenu("ヘルプ(&H)")
 
@@ -1254,7 +1331,7 @@ class MainWindow(QMainWindow):
 
         # --- menu書式設定 ---
         TOP_BOTTOM_MARGIN = 4
-        for m in (file_menu, self.image_menu, self.size_menu, self.bg_menu, help_menu):
+        for m in (file_menu, self.image_menu, self.size_menu, self.bg_menu, view_menu, help_menu):
             m.setContentsMargins(0, TOP_BOTTOM_MARGIN, 0, TOP_BOTTOM_MARGIN)
 
         SEPARATOR_LR_MARGIN = 8
@@ -1270,7 +1347,7 @@ class MainWindow(QMainWindow):
         }}
         """
 
-        for m in (file_menu, self.image_menu, self.size_menu, self.bg_menu, help_menu):
+        for m in (file_menu, self.image_menu, self.size_menu, self.bg_menu, view_menu, help_menu):
             m.setStyleSheet(menu_qss)
 
         # --- ショートカット一覧（左下オーバーレイ）を更新 ---
@@ -1278,12 +1355,17 @@ class MainWindow(QMainWindow):
             act_open,
             act_save,
             act_clear_image,
-            None,  # 区切り線
+
+            None,  # 区切り線（ファイル系 / 画像系）
             act_fit_width,
             act_fit_height,
             act_fit_all,
             act_reset_pos,
             act_reset_scale,
+
+            None,  # 区切り線（画像系 / 表示系）
+            act_center_guides,
+            act_taskbar,
         ])
 
     def _set_image_menu_enabled(self, enabled: bool):
@@ -1521,6 +1603,9 @@ class MainWindow(QMainWindow):
 
         self.canvas_bg_item.setRect(self.output_size.rect)
         self.frame_item.setRect(self.output_size.rect)
+
+        if hasattr(self, "_guide_center_v"):
+            self._update_guides_geometry()
 
         self._apply_scene_rect()
         self._apply_canvas_appearance()
@@ -1993,3 +2078,12 @@ class MainWindow(QMainWindow):
         self._save_recent_settings()
         self._rebuild_recent_bg_menu()
 
+
+    # --- トグル用メソッド ---
+    def set_center_guides_visible(self, visible: bool):
+        self._show_center_guides = bool(visible)
+        self._update_guides_visibility()
+
+    def set_taskbar_guide_visible(self, visible: bool):
+        self._show_taskbar_guide = bool(visible)
+        self._update_guides_visibility()
